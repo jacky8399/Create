@@ -1,8 +1,16 @@
 package com.simibubi.create.compat.computercraft.implementation.peripherals;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import javax.annotation.Nullable;
+
+import com.simibubi.create.content.trains.display.GlobalTrainDisplayData;
+import com.simibubi.create.content.trains.schedule.ScheduleRuntime;
+
+import dan200.computercraft.api.peripheral.IComputerAccess;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -32,8 +40,22 @@ import net.minecraftforge.network.PacketDistributor;
 
 public class StationPeripheral extends SyncedPeripheral<StationBlockEntity> {
 
+	public final Set<IComputerAccess> computers = Collections.synchronizedSet(new HashSet<>());
+
 	public StationPeripheral(StationBlockEntity blockEntity) {
 		super(blockEntity);
+	}
+
+	@Override
+	public void attach(@NotNull IComputerAccess computer) {
+		super.attach(computer);
+		computers.add(computer);
+	}
+
+	@Override
+	public void detach(@NotNull IComputerAccess computer) {
+		super.detach(computer);
+		computers.remove(computer);
 	}
 
 	@LuaFunction(mainThread = true)
@@ -155,6 +177,44 @@ public class StationPeripheral extends SyncedPeripheral<StationBlockEntity> {
 		Schedule schedule = Schedule.fromTag(toCompoundTag(new CreateLuaTable(arguments.getTable(0))));
 		boolean autoSchedule = train.runtime.getSchedule() == null || train.runtime.isAutoSchedule;
 		train.runtime.setSchedule(schedule, autoSchedule);
+	}
+
+	@LuaFunction
+	public final String getTrainStatus() throws LuaException {
+		Train train = getTrainOrThrow();
+		ScheduleRuntime runtime = train.runtime;
+		Schedule schedule = runtime.getSchedule();
+		if (schedule == null)
+			return null;
+		if (runtime.paused)
+			return null;
+		if (runtime.state != ScheduleRuntime.State.POST_TRANSIT)
+			return null;
+		if (runtime.currentEntry == schedule.entries.size() - 1 && !schedule.cyclic)
+			return null;
+		return runtime.getWaitingStatus(blockEntity.getLevel()).getString();
+	}
+
+	@LuaFunction
+	public final CreateLuaTable getStationSummary(IArguments arguments) throws LuaException {
+		GlobalStation station = blockEntity.getStation();
+		if (station == null)
+			throw new LuaException("station is not connected to a track");
+
+		String filter = arguments.get(0) instanceof String string ? string : station.name;
+		int entries = arguments.get(1) instanceof Number number ? number.intValue() : 10;
+		CreateLuaTable table = new CreateLuaTable();
+		int index = 1;
+		for (GlobalTrainDisplayData.TrainDeparturePrediction prediction : GlobalTrainDisplayData.prepare(filter, entries)) {
+			CreateLuaTable predictionTable = new CreateLuaTable();
+			predictionTable.putString("train", prediction.train.name.getString());
+			predictionTable.putString("destination", prediction.destination);
+			predictionTable.putString("scheduleTitle", prediction.scheduleTitle.getString());
+			predictionTable.put("ticks", prediction.ticks);
+
+			table.putTable(index++, predictionTable);
+		}
+		return table;
 	}
 
 	private @NotNull Train getTrainOrThrow() throws LuaException {

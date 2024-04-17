@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 
 import javax.annotation.Nullable;
 
+import com.simibubi.create.compat.computercraft.implementation.peripherals.StationPeripheral;
 import com.simibubi.create.content.trains.graph.DiscoveredPath;
 
 import org.jetbrains.annotations.NotNull;
@@ -275,6 +276,13 @@ public class StationBlockEntity extends SmartBlockEntity implements ITransformab
 
 			notifyUpdate();
 		}
+
+		if (newlyArrived) {
+			String eventName = trainPresent ? "station_arrived" : "station_departed";
+			computerBehaviour.<StationPeripheral>getPeripheralCapability().ifPresent(peripheral -> {
+				peripheral.computers.forEach(computer -> computer.queueEvent(eventName));
+			});
+		}
 	}
 
 	public boolean trackClicked(Player player, InteractionHand hand, ITrackBlock track, BlockState state,
@@ -288,7 +296,7 @@ public class StationBlockEntity extends SmartBlockEntity implements ITransformab
 		BlockPos up = new BlockPos(track.getUpNormal(level, pos, state));
 		BlockPos down = new BlockPos(track.getUpNormal(level, pos, state).scale(-1));
 		int bogeyOffset = pos.distManhattan(edgePoint.getGlobalPosition()) - 1;
-		
+
 		if (!isValidBogeyOffset(bogeyOffset)) {
 			for (boolean upsideDown : Iterate.falseAndTrue) {
 				for (int i = -1; i <= 1; i++) {
